@@ -58,14 +58,19 @@ staging_songs_table_create = (""" CREATE TABLE staging_songs
 songplay_table_create = (""" CREATE TABLE songplay
                         (songplay_id INTEGER PRIMARY KEY NOT NULL,
                         start_time TIMESTAMP,
-                        user_id INTEGER FOREIGN KEY REFERENCES users(user_id),
-                        level VARCHAR(25) FOREIGN KEY REFERENCES users(level),
-                        song_id VARCHAR(25) FOREIGN KEY REFERENCES songs(song_id),
-                        artist_id VARCHAR(25)  FOREIGN KEY REFERENCES artists(artist_id) sortkey distkey,
+                        user_id INTEGER,
+                        level VARCHAR(25),
+                        song_id VARCHAR(25),
+                        artist_id VARCHAR(25) sortkey distkey,
                         session_id INTEGER,
-                        location VARCHAR(50) FOREIGN KEY REFERENCES artist(location),
+                        location VARCHAR(50),
                         user_agent VARCHAR(50),
                         FOREIGN KEY start_time REFERENCES time(start_time),
+                        FOREIGN KEY user_id REFERENCES users(user_id),
+                        FOREIGN KEY level REFERENCES users(level),
+                        FOREIGN KEY song_id REFERENCES songs(song_id),
+                        FOREIGN KEY artist_id REFERENCES artists(artist_id),
+                        FOREIGN KEY location REFERENCES artist(location)
                         
                         );
 """)
@@ -111,26 +116,76 @@ time_table_create = (""" CREATE TABLE time
 # STAGING TABLES
 
 staging_events_copy = ("""
-""").format()
+copy {} from 's3://udacity-dend/{}' 
+credentials 'aws_iam_role={}'
+gzip region 'us-west-2';
+""").format('staging_events','log_data',config.get("IAM_ROLE","ARN"))
 
 staging_songs_copy = ("""
-""").format()
+copy {} from 's3://udacity-dend/{}' 
+credentials 'aws_iam_role={}'
+gzip region 'us-west-2';
+""").format('staging_songs','song_data',config.get("IAM_ROLE","ARN"))
 
 # FINAL TABLES
 
 songplay_table_insert = ("""
+INSERT INTO songplay (start_time, user_id, level,song_id,
+                      artist_id, session_id, location, user_agent)
+SELECT to_timestamp(to_char(se.ts, '9999-99-99 99:99:99'),'YYYY-MM-DD HH24:MI:SS') as start_time,
+       se.user_id as user_id,
+       se.level as level,
+       ss.song_id as song_id,
+       ss.artist_id as artist_id,
+       se.session_id as session_id,
+       se.location as location,
+       se.user_agent as user_agent
+FROM staging_events se JOIN staging_songs ss ON se.song=ss.title AND se.artist=ss.artist_name
+WHERE se.page='NextSong'
 """)
 
 user_table_insert = ("""
+INSERT INTO users (user_id, first_name, last_name, gender, level)
+SELECT DISTINCT user_id,
+                first_name,
+                last_name,
+                gender,
+                level
+FROM staging_events
+WHERE page = 'NextSong' AND user_id NOT IN (SELECT DISTINCT user_id FROM users)
 """)
 
 song_table_insert = ("""
+INSERT INTO songs (song_id, title, artist_id, year, duration)
+SELECT DISTINCT song_id,
+                title,
+                artist_id,
+                year,
+                duration
+FROM staging_songs
+               
 """)
 
 artist_table_insert = ("""
+INSERT INTO artists (artist_id, name, location, latitude, longitude)
+SELECT DISTINCT artist_id, 
+                artist_name as name, 
+                artist_location as location, 
+                artist_latitude as latitude, 
+                artist_longitude as longitude
+FROM artists
 """)
 
 time_table_insert = ("""
+INSERT INTO time (start_time, hour, day, week, month, year, weekday)
+SELECT DISTINCT ts as start_time,
+                EXTRACT(hour from ts),
+                EXTRACT(day from ts),
+                EXTRACT(week from ts),
+                EXTRACT(month from ts),
+                EXTRACT(year from ts),
+                EXTRACT(weekday from ts)
+FROM stating_events
 """)
 
 # QUERY LISTS
