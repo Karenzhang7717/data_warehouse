@@ -42,11 +42,12 @@ staging_events_table_create= (""" CREATE TABLE staging_events
 
 staging_songs_table_create = (""" CREATE TABLE staging_songs
                         ( num_songs INTEGER,
-                         artist_id VARCHAR(25),
+                         artist_id VARCHAR,
                          artist_latitude FLOAT,
                          artist_longitude FLOAT,
+                         artist_location VARCHAR,
                          artist_name VARCHAR,
-                         song_id VARCHAR(25) PRIMARY KEY,
+                         song_id VARCHAR PRIMARY KEY,
                          title VARCHAR,
                          duration FLOAT,
                          year INT);
@@ -57,37 +58,37 @@ songplay_table_create = (""" CREATE TABLE songplay
                         (songplay_id INTEGER PRIMARY KEY NOT NULL,
                         start_time TIMESTAMP,
                         user_id INTEGER,
-                        level VARCHAR(25),
-                        song_id VARCHAR(25),
-                        artist_id VARCHAR(25) sortkey distkey,
+                        level VARCHAR,
+                        song_id VARCHAR,
+                        artist_id VARCHAR sortkey distkey,
                         session_id INTEGER,
-                        location VARCHAR(50),
-                        user_agent VARCHAR(50)
+                        location VARCHAR,
+                        user_agent VARCHAR
                         );
 """)
 
 user_table_create = (""" CREATE TABLE users
                         (user_id INTEGER PRIMARY KEY NOT NULL sortkey,
-                        first_name VARCHAR(25),
-                        last_name VARCHAR(25),
-                        gender VARCHAR(5),
-                        level VARCHAR(25)
+                        first_name VARCHAR,
+                        last_name VARCHAR,
+                        gender VARCHAR,
+                        level VARCHAR
                         ) diststyle all;
 """)
 
 song_table_create = (""" CREATE TABLE songs
-                        (song_id VARCHAR(25) PRIMARY KEY NOT NULL sortkey,
+                        (song_id VARCHAR PRIMARY KEY NOT NULL sortkey,
                          title VARCHAR,
-                         artist_id VARCHAR(25) NOT NULL distkey,
+                         artist_id VARCHAR NOT NULL distkey,
                          year INT,
                          duration FLOAT
                          );
 """)
 
 artist_table_create = (""" CREATE TABLE artists
-                        (artist_id VARCHAR(25) PRIMARY KEY NOT NULL sortkey distkey,
+                        (artist_id VARCHAR PRIMARY KEY NOT NULL sortkey distkey,
                         artist_name VARCHAR,
-                        location VARCHAR(50),
+                        location VARCHAR,
                          artist_latitude FLOAT,
                          artist_longitude FLOAT
                         );
@@ -100,17 +101,18 @@ time_table_create = (""" CREATE TABLE time
                      week INTEGER,
                      month INTEGER,
                      year INTEGER,
-                     weekday VARCHAR(25)
+                     weekday VARCHAR
                     ) diststyle all;
 """)
 
 # STAGING TABLES
-
-staging_events_copy = ("""
-copy {} from 's3://udacity-dend/{}' 
-credentials 'aws_iam_role={}'
-format as json 'auto' region 'us-west-2';
-""").format('staging_events','log_json_path.json',config.get("IAM_ROLE","ARN"))
+staging_events_copy = ("""copy staging_events 
+                            from {} credentials  
+                            'aws_iam_role={}'   
+                            json {}  
+                            compupdate off
+                            region 'us-west-2';
+""").format(config.get("S3","LOG_DATA"), config.get("IAM_ROLE", "ARN"), config.get("S3", "LOG_JSONPATH"))
 
 staging_songs_copy = ("""
 copy {} from 's3://udacity-dend/{}' 
@@ -154,7 +156,7 @@ SELECT DISTINCT song_id,
                 artist_id,
                 year,
                 duration
-FROM staging_songs
+FROM staging_songs WHERE song_id NOT IN (SELECT DISTINCT song_id FROM songs)
                
 """)
 
@@ -162,10 +164,10 @@ artist_table_insert = ("""
 INSERT INTO artists (artist_id, artist_name, location, artist_latitude, artist_longitude)
 SELECT DISTINCT artist_id, 
                 artist_name, 
-                location, 
+                artist_location as location, 
                 artist_latitude, 
                 artist_longitude
-FROM artists
+FROM staging_songs WHERE artist_id NOT IN (SELECT DISTINCT artist_id FROM artists)
 """)
 
 time_table_insert = ("""
@@ -181,7 +183,6 @@ FROM staging_events WHERE ts IS NOT NULL;
 """)
 
 # QUERY LISTS
-# create_table_queries = [staging_events_table_create, staging_songs_table_create]
 create_table_queries = [staging_events_table_create, staging_songs_table_create, user_table_create, song_table_create, artist_table_create, time_table_create, songplay_table_create]
 drop_table_queries = [staging_events_table_drop, staging_songs_table_drop, songplay_table_drop, user_table_drop, song_table_drop, artist_table_drop, time_table_drop]
 copy_table_queries = [staging_events_copy, staging_songs_copy]
